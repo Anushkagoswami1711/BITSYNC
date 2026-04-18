@@ -137,6 +137,7 @@ def background_sms_job():
             history_slice = global_df.iloc[max(0, SIMULATION_INDEX-5) : SIMULATION_INDEX+1]
             history_list = history_slice.to_dict(orient='records')
             
+<<<<<<< HEAD
             current, predicted, risk, _, _, _ = predict_future_risk(history_list)
             
             timestamp = datetime.datetime.now().strftime('%H:%M:%S')
@@ -144,6 +145,13 @@ def background_sms_job():
             print(f"\n--- REAL TIME UPDATE ---\n")
             print(sms_text)
             print("-" * 24 + "\n")
+=======
+            current, predicted, risk, _, _ = predict_future_risk(history_list)
+            
+            timestamp = datetime.datetime.now().strftime('%H:%M:%S')
+            sms_text = f"[CROWD SHIELD ALERT - {timestamp}]\nRisk: {risk}\nCurrent: {round(current,2)} pax/m\nPredicted: {round(predicted,2)} pax/m."
+            print(f"\n--- REAL TIME UPDATE ---\n{sms_text}\n------------------------\n")
+>>>>>>> 0799b0d790880040d2d56f37f44af788cd9dc9c9
                 
             if TWILIO_ACCOUNT_SID != 'your_account_sid_here':
                 try:
