@@ -102,6 +102,17 @@ def predict_future_risk(history_list):
     
     return current_pressure, predicted_pressure, risk_level, time_to_risk, slope, surge_type
 
+def classify_pattern(history_list):
+    pressures = [calculate_pressure(p) for p in history_list[-5:]]
+    if len(pressures) < 2:
+        return "UNKNOWN"
+    peak_idx = pressures.index(max(pressures))
+    if peak_idx == len(pressures) - 1:
+        return "CRUSH"
+    if pressures[-1] < pressures[peak_idx] * 0.9:
+        return "SURGE"
+    return "CRUSH"
+
 @app.route('/api/data', methods=['GET'])
 def send_data_to_react():
     requested_city = request.args.get('location', 'Somnath')
@@ -118,6 +129,7 @@ def send_prediction_to_react():
     request_data = request.json
     history_data = request_data.get('history', [])
     current, predicted, risk, time_to_risk, slope, surge_type = predict_future_risk(history_data)
+    pattern = classify_pattern(history_data)
     
     return jsonify({
         "current_pressure": current,
@@ -125,7 +137,8 @@ def send_prediction_to_react():
         "risk_level": risk,
         "predicted_minutes_to_high_risk": time_to_risk,
         "trend_slope": slope,
-        "surge_type": surge_type
+        "surge_type": surge_type,
+        "pattern": pattern
     })
 
 SIMULATION_INDEX = 0
@@ -137,7 +150,7 @@ def background_sms_job():
             history_slice = global_df.iloc[max(0, SIMULATION_INDEX-5) : SIMULATION_INDEX+1]
             history_list = history_slice.to_dict(orient='records')
             
-            current, predicted, risk, _, _ = predict_future_risk(history_list)
+            current, predicted, risk, _, _, _ = predict_future_risk(history_list)
             
             timestamp = datetime.datetime.now().strftime('%H:%M:%S')
             sms_text = f"[CROWD SHIELD ALERT - {timestamp}]\nRisk: {risk}\nCurrent: {round(current,2)} pax/m\nPredicted: {round(predicted,2)} pax/m."

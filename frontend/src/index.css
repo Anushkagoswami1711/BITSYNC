@@ -10,7 +10,7 @@
   --danger-bg:  #fef2f2;
   --warning:    #f59e0b;
   --warning-bg: #fffbeb;
-  --success:    #10b981;
+  --success:    #1e293b;
   --success-bg: #ecfdf5;
   --border-color: #e2e8f0;
   font-family: 'Inter', system-ui, sans-serif;
@@ -119,7 +119,7 @@ body { min-height: 100vh; background-color: var(--bg-main); }
 .btn-primary                     { background: var(--accent);  color: white; }
 .btn-primary:hover:not(:disabled){ background: #1d4ed8; }
 .btn-success                     { background: var(--success); color: white; }
-.btn-success:hover:not(:disabled){ background: #059669; }
+.btn-success:hover:not(:disabled){ background: #1e3a8a; }
 .btn-danger                      { background: var(--danger);  color: white; }
 .btn-danger:hover:not(:disabled) { background: #dc2626; }
 
@@ -195,4 +195,69 @@ body { min-height: 100vh; background-color: var(--bg-main); }
   width: 100%;
   position: relative;
   animation: scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESPONSIVE — TABLET (≤ 900px)
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .dashboard-container { padding: 1rem; gap: 1rem; }
+
+  .header {
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: stretch;
+    padding: 0.85rem 1rem;
+  }
+  .header-brand  { justify-content: center; }
+  .header-controls {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.6rem !important;
+  }
+
+  .grid-layout { grid-template-columns: 1fr; gap: 1rem; }
+  .col-span-4, .col-span-8, .col-span-12 { grid-column: span 1; }
+
+  .agency-panel { grid-template-columns: 1fr; gap: 0.85rem; }
+
+  .metric-value { font-size: 2.2rem; }
+
+  .modal-box { padding: 1.5rem; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESPONSIVE — MOBILE (≤ 480px)
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+  .dashboard-container { padding: 0.5rem; gap: 0.75rem; }
+
+  .header { padding: 0.65rem 0.75rem; border-radius: 8px; }
+  .header-brand { gap: 0.4rem !important; flex-wrap: wrap; justify-content: center; }
+  .header-brand span { font-size: 1.1rem !important; }
+  .header-subtitle { display: none; }
+  .header-controls { gap: 0.4rem !important; }
+  .header-controls .btn { padding: 0.4rem 0.7rem !important; font-size: 0.72rem; }
+
+  .card { padding: 0.85rem; border-radius: 8px; }
+  .card-title { font-size: 0.7rem; margin-bottom: 0.5rem; }
+
+  .metric-value { font-size: 1.8rem; }
+  .metric-value span { font-size: 0.75rem !important; }
+
+  .modern-table { font-size: 0.7rem; }
+  .modern-table th, .modern-table td { padding: 0.35rem; }
+
+  .modal-overlay { padding: 0.5rem; }
+  .modal-box {
+    padding: 1.25rem 1rem;
+    border-radius: 12px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal-box h2 { font-size: 1.05rem !important; }
+  .modal-box p  { font-size: 0.8rem !important; }
+
+  .btn { padding: 0.5rem 0.8rem; font-size: 0.78rem; }
+  select { font-size: 0.72rem !important; padding: 0.25rem 0.4rem !important; }
 }

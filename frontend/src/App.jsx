@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { ShieldAlert, Play, Pause, UserCheck, Building2, Bus, Activity,
-         AlertTriangle, CheckCircle, AlertCircle, MapPin, Clock, ArrowRight } from 'lucide-react';
+         AlertTriangle, CheckCircle, AlertCircle, MapPin, Clock } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -74,13 +74,7 @@ const SCENARIOS = [
 
 const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-/* ── PAGE CONSTANTS ───────────────────────────────────────────────── */
-const PAGE_HOME    = 'home';
-const PAGE_AGENCY  = 'agency';   // full-screen agency confirmation page
-
 export default function App() {
-  // ── Routing ────────────────────────────────────────────────────────
-  const [page, setPage] = useState(PAGE_HOME);
 
   // ── Simulation state ───────────────────────────────────────────────
   const [city, setCity]           = useState('Somnath');
@@ -91,18 +85,31 @@ export default function App() {
   const [logs, setLogs]           = useState([]);
   const [pred, setPred]           = useState({
     current_pressure: 0, predicted_pressure: 0, risk_level: 'LOW',
-    predicted_minutes_to_high_risk: 0, trend_slope: 0
+    predicted_minutes_to_high_risk: 0, trend_slope: 0, pattern: 'UNKNOWN'
   });
+
+  // Replay speed: ms between steps
+  const [replaySpeed, setReplaySpeed] = useState(1500);
 
   // ── Modal (step 1 & 2) ─────────────────────────────────────────────
   const [modal, setModal]         = useState(null);   // null | 'ask' | 'warn'
   const [eventTime, setEventTime] = useState('');
   const [scenario, setScenario]   = useState(SCENARIOS[0]);
 
-  // ── Agency confirmations (used on PAGE_AGENCY) ─────────────────────
+  // ── SLA Timer ──────────────────────────────────────────────────────
+  const [slaTimer, setSlaTimer]     = useState(90);
+  const [slaBreach, setSlaBreach]   = useState(false);
+  const slaStartRef                 = useRef(null);  // Date.now() when modal opened
+  const slaBreachLoggedRef          = useRef(false); // prevent duplicate breach logs
+
+  // ── Agency confirmations (used in Step 2 modal) ────────────────────
   const [policeAck, setPoliceAck] = useState(false);
   const [templeAck, setTempleAck] = useState(false);
   const [gsrtcAck,  setGsrtcAck]  = useState(false);
+  // Per-agency response times (null until confirmed)
+  const [policeAckTime, setPoliceAckTime] = useState(null);
+  const [templeAckTime, setTempleAckTime] = useState(null);
+  const [gsrtcAckTime,  setGsrtcAckTime]  = useState(null);
 
   const emergencyRef = useRef(false);
   const audioRef     = useRef(null);
@@ -113,6 +120,26 @@ export default function App() {
     audioRef.current.loop = true;
     return () => { if (audioRef.current) audioRef.current.pause(); };
   }, []);
+
+  /* ── SLA 90s countdown (runs while modal is open) ───────────────── */
+  useEffect(() => {
+    if (!modal) { setSlaTimer(90); return; }
+    const tick = setInterval(() => {
+      setSlaTimer(prev => {
+        if (prev <= 1) {
+          clearInterval(tick);
+          setSlaBreach(true);
+          if (!slaBreachLoggedRef.current) {
+            slaBreachLoggedRef.current = true;
+            setLogs(p => [{ time: new Date().toLocaleTimeString(), detail: '[SLA BREACHED] No action taken within 90 seconds', breach: true }, ...p]);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [modal]);
 
   /* ── Load data on city change ───────────────────────────────────── */
   useEffect(() => {
@@ -141,10 +168,10 @@ export default function App() {
           processStep(next, data);
           return next;
         });
-      }, 1500);
+      }, replaySpeed);
     }
     return () => clearInterval(t);
-  }, [playing, data]);
+  }, [playing, data, replaySpeed]);
 
   /* ── Core step processor ────────────────────────────────────────── */
   const processStep = async (step, dataset) => {
@@ -154,14 +181,26 @@ export default function App() {
     const context = dataset.slice(Math.max(0, step - 5), step + 1);
     try {
       const res = await axios.post(`${API}/predict`, { history: context });
-      const p   = res.data;
-      setPred(p);
+      const p = res.data;
+      setPred(prev => ({ ...prev, ...p }));
       if (p.risk_level === 'HIGH' && !emergencyRef.current) triggerEmergency(p.current_pressure);
     } catch (e) { console.error(e); }
   };
 
   const stopAudio = () => {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
+  };
+
+  const handleReset = () => {
+    setPlaying(false);
+    setIdx(0);
+    setChartData([]);
+    setLogs([]);
+    setModal(null);
+    emergencyRef.current = false;
+    stopAudio();
+    setPred({ current_pressure: 0, predicted_pressure: 0, risk_level: 'LOW', predicted_minutes_to_high_risk: 0, trend_slope: 0, pattern: 'UNKNOWN' });
+    if (data.length > 0) processStep(0, data);
   };
 
   /* ── Emergency trigger ──────────────────────────────────────────── */
@@ -171,6 +210,11 @@ export default function App() {
     emergencyRef.current = true;
     setPlaying(false);
     setPoliceAck(false); setTempleAck(false); setGsrtcAck(false);
+    setPoliceAckTime(null); setTempleAckTime(null); setGsrtcAckTime(null);
+    setSlaBreach(false);
+    slaBreachLoggedRef.current = false;
+    setSlaTimer(90);
+    slaStartRef.current = Date.now();
     const t = new Date().toLocaleTimeString();
     setEventTime(t);
     if (audioRef.current) audioRef.current.play().catch(() => {});
@@ -178,32 +222,44 @@ export default function App() {
     setLogs(prev => [{ time: t, detail: `HIGH RISK @ ${city} - ${chosen.headline} (${pressure.toFixed(1)} pax/m)` }, ...prev]);
   };
 
-  /* ── Modal Step 1: YES ──────────────────────────────────────────── */
+  /* ── Modal Step 1: YES (with response time tracking) ────────────── */
   const handleActionYes = () => {
+    const elapsed = Math.round((Date.now() - slaStartRef.current) / 1000);
+    const overdue = elapsed > 90;
     stopAudio();
     emergencyRef.current = false;
     setModal(null);
     setPlaying(true);
-    setLogs(prev => [{ time: new Date().toLocaleTimeString(), detail: 'Operator confirmed action taken - simulation resumed.' }, ...prev]);
+    const msg = overdue
+      ? `Operator confirmed action (${elapsed}s — OVERDUE by ${elapsed - 90}s) - simulation resumed.`
+      : `Operator confirmed action in ${elapsed} seconds - simulation resumed.`;
+    setLogs(prev => [{ time: new Date().toLocaleTimeString(), detail: msg, breach: overdue }, ...prev]);
   };
 
-  /* ── Modal Step 1: NO → show Step 2 ────────────────────────────── */
+  /* ── Modal Step 1: NO → show Step 2 with agency confirms ────────── */
   const handleActionNo = () => setModal('warn');
 
-  /* ── Modal Step 2: "Confirm All Agency Tasks" → go to Agency Page ── */
-  const handleGoToAgencyPage = () => {
-    setModal(null);
-    setPage(PAGE_AGENCY);   // navigate to the agency confirmation page
+  /* ── Agency ack handler (used in Step 2 modal) ──────────────────── */
+  const handleAgencyAck = (agency) => {
+    const elapsed = Math.round((Date.now() - slaStartRef.current) / 1000);
+    const overdue = elapsed > 90;
+    const t = new Date().toLocaleTimeString();
+    const overdueTag = overdue ? ` — OVERDUE by ${elapsed - 90}s` : '';
+    if (agency === 'police')  { setPoliceAck(true);  setPoliceAckTime(elapsed); setLogs(prev => [{ time: t, detail: `District Police confirmed (${elapsed}s${overdueTag})`, breach: overdue }, ...prev]); }
+    if (agency === 'temple')  { setTempleAck(true);  setTempleAckTime(elapsed); setLogs(prev => [{ time: t, detail: `Temple Trust confirmed (${elapsed}s${overdueTag})`, breach: overdue }, ...prev]); }
+    if (agency === 'gsrtc')   { setGsrtcAck(true);   setGsrtcAckTime(elapsed);  setLogs(prev => [{ time: t, detail: `GSRTC Transport confirmed (${elapsed}s${overdueTag})`, breach: overdue }, ...prev]); }
   };
 
-  /* ── Agency Page: called when all 3 are confirmed ──────────────── */
-  const handleAllAgenciesConfirmed = () => {
+  /* ── Close modal once all 3 agencies confirmed ─────────────────── */
+  const handleAllDone = () => {
     stopAudio();
     emergencyRef.current = false;
-    setPage(PAGE_HOME);
+    setModal(null);
     setPlaying(true);
-    setLogs(prev => [{ time: new Date().toLocaleTimeString(), detail: 'All agencies confirmed deployment - simulation resumed.' }, ...prev]);
+    setLogs(prev => [{ time: new Date().toLocaleTimeString(), detail: 'All agencies confirmed - simulation resumed.' }, ...prev]);
   };
+
+  const allAgenciesDone = policeAck && templeAck && gsrtcAck;
 
   /* ── Chart data ─────────────────────────────────────────────────── */
   const lines = chartData.map((d, i) => ({
@@ -226,74 +282,6 @@ export default function App() {
   const appLocked = modal !== null;
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-     AGENCY CONFIRMATION PAGE
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-  if (page === PAGE_AGENCY) {
-    const allDone = policeAck && templeAck && gsrtcAck;
-    return (
-      <div className="dashboard-container" style={{ maxWidth: 700, margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', padding: '2rem 0 1rem' }}>
-          <AlertTriangle size={48} color="#ef4444" style={{ animation: allDone ? 'none' : 'pulse-icon 1.5s infinite' }} />
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', marginTop: '0.75rem' }}>
-            AGENCY DEPLOYMENT CONFIRMATION
-          </h1>
-          <p style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            Confirm that each agency has received and acted on their assigned task before resuming.
-          </p>
-
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10,
-            padding: '0.75rem 1.25rem', margin: '1rem auto', maxWidth: 500, fontSize: '0.85rem', lineHeight: 1.8, textAlign: 'left' }}>
-            <div><MapPin size={13} style={{ verticalAlign: 'middle' }} /> <strong>Location:</strong> {city} - {scenario.location}</div>
-            <div><Clock size={13} style={{ verticalAlign: 'middle' }} /> <strong>Alert Time:</strong> {eventTime}</div>
-            <div>⏳ <strong>Duration:</strong> {scenario.duration}</div>
-          </div>
-        </div>
-
-        {/* 3 Agency Confirmation Cards */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <AgencyConfirmCard
-            icon={<UserCheck size={22} />}
-            name="DISTRICT POLICE"
-            color="#1e3a8a" bg="#eff6ff"
-            task={scenario.police}
-            isAcked={policeAck}
-            onAck={() => setPoliceAck(true)}
-          />
-          <AgencyConfirmCard
-            icon={<Building2 size={22} />}
-            name="TEMPLE TRUST"
-            color="#92400e" bg="#fffbeb"
-            task={scenario.temple}
-            isAcked={templeAck}
-            onAck={() => setTempleAck(true)}
-          />
-          <AgencyConfirmCard
-            icon={<Bus size={22} />}
-            name="GSRTC TRANSPORT"
-            color="#166534" bg="#f0fdf4"
-            task={scenario.gsrtc}
-            isAcked={gsrtcAck}
-            onAck={() => setGsrtcAck(true)}
-          />
-        </div>
-
-        {/* Final confirm button — only enabled when all 3 checked */}
-        <div style={{ marginTop: '1.5rem', paddingBottom: '2rem' }}>
-          <button
-            className="btn btn-success"
-            style={{ width: '100%', padding: '1rem', fontSize: '1rem', opacity: allDone ? 1 : 0.4, cursor: allDone ? 'pointer' : 'not-allowed' }}
-            disabled={!allDone}
-            onClick={handleAllAgenciesConfirmed}
-          >
-            <CheckCircle size={20} />
-            {allDone ? 'ALL AGENCIES CONFIRMED - RETURN TO DASHBOARD' : `Confirm all 3 agencies to continue (${[policeAck, templeAck, gsrtcAck].filter(Boolean).length}/3 done)`}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      HOME PAGE
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   return (
@@ -303,24 +291,45 @@ export default function App() {
       {appLocked && (
         <div className="modal-overlay">
 
-          {/* STEP 1: Did you take action? */}
+          {/* STEP 1: Did you take action? + 90s SLA Timer */}
           {modal === 'ask' && (
-            <div className="modal-box shadow-xl" style={{ borderTop: '8px solid #ef4444', maxWidth: 480 }}>
-              <div style={{ textAlign: 'center', color: '#ef4444', marginBottom: '1rem' }}>
-                <AlertTriangle size={60} style={{ animation: 'pulse-icon 1.5s infinite' }} />
+            <div className="modal-box shadow-xl" style={{ borderTop: '8px solid #ef4444', maxWidth: 500 }}>
+              {/* SLA Timer bar */}
+              <div style={{ position: 'relative', height: 6, background: '#f1f5f9', borderRadius: 99, marginBottom: '1.25rem', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 99,
+                  width: `${(slaTimer / 90) * 100}%`, transition: 'width 1s linear',
+                  background: slaTimer > 30 ? '#2563eb' : slaTimer > 10 ? '#f59e0b' : '#ef4444' }} />
               </div>
-              <h2 style={{ textAlign: 'center', marginBottom: '0.4rem', fontSize: '1.35rem', color: '#0f172a' }}>
+              <div style={{ textAlign: 'center', color: '#ef4444', marginBottom: '0.75rem' }}>
+                <AlertTriangle size={52} style={{ animation: 'pulse-icon 1.5s infinite' }} />
+              </div>
+              <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
+                <span style={{ fontFamily: 'monospace', fontSize: '2rem', fontWeight: 800,
+                  color: slaTimer > 30 ? '#1e293b' : slaTimer > 10 ? '#d97706' : '#dc2626' }}>
+                  {slaTimer}s
+                </span>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', marginTop: '0.2rem' }}>
+                  SLA Response Window
+                </div>
+              </div>
+              <h2 style={{ textAlign: 'center', marginBottom: '0.4rem', fontSize: '1.25rem', color: '#0f172a' }}>
                 ⚠️ {scenario.headline}
               </h2>
-              <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.88rem', marginBottom: '0.4rem' }}>
+              <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.85rem', marginBottom: '0.4rem' }}>
                 {scenario.subtext}
               </p>
-              <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.88rem', marginBottom: '1.5rem' }}>
+              <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
                 📍 <strong>{city} - {scenario.location}</strong> &nbsp;|&nbsp; ⏰ <strong>{eventTime}</strong>
               </p>
-              <p style={{ textAlign: 'center', fontWeight: 700, fontSize: '1.05rem', marginBottom: '1.75rem', color: '#0f172a' }}>
+              <p style={{ textAlign: 'center', fontWeight: 700, fontSize: '1rem', marginBottom: '1.5rem', color: '#0f172a' }}>
                 Did you take any action or not?
               </p>
+              {slaBreach && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
+                  padding: '0.6rem 1rem', marginBottom: '1rem', textAlign: 'center', color: '#b91c1c', fontWeight: 700, fontSize: '0.85rem' }}>
+                  ⏱️ SLA BREACHED — Response window expired!
+                </div>
+              )}
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <button className="btn btn-success" style={{ flex: 1, padding: '0.75rem' }} onClick={handleActionYes}>
                   <CheckCircle size={18} /> YES - Action Taken
@@ -332,32 +341,54 @@ export default function App() {
             </div>
           )}
 
-          {/* STEP 2: Full escalation + "Go to Agency Page" */}
+          {/* STEP 2: Individual agency confirmation */}
           {modal === 'warn' && (
-            <div className="modal-box shadow-xl" style={{ borderTop: '8px solid #ef4444', maxWidth: 540 }}>
-              <h2 style={{ color: '#ef4444', marginBottom: '0.4rem', fontSize: '1.25rem' }}>
-                🚨 IMMEDIATE ACTION REQUIRED
-              </h2>
-              <p style={{ color: '#64748b', marginBottom: '1rem', fontSize: '0.85rem' }}>
-                {scenario.subtext}. Immediate coordinated action is required from all agencies.
-              </p>
+            <div className="modal-box shadow-xl" style={{ borderTop: '8px solid #ef4444', maxWidth: 580, maxHeight: '90vh', overflowY: 'auto' }}>
+              {/* SLA Timer bar (continues) */}
+              <div style={{ position: 'relative', height: 6, background: '#f1f5f9', borderRadius: 99, marginBottom: '1rem', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 99,
+                  width: `${(slaTimer / 90) * 100}%`, transition: 'width 1s linear',
+                  background: slaTimer > 30 ? '#2563eb' : slaTimer > 10 ? '#f59e0b' : '#ef4444' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <h2 style={{ color: '#ef4444', marginBottom: 0, fontSize: '1.15rem' }}>
+                  🚨 CONFIRM EACH AGENCY
+                </h2>
+                <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '1.1rem',
+                  color: slaTimer > 30 ? '#1e293b' : slaTimer > 10 ? '#d97706' : '#dc2626' }}>
+                  {slaTimer}s
+                </span>
+              </div>
+
               <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10,
-                padding: '0.75rem 1rem', marginBottom: '1.25rem', fontSize: '0.85rem', lineHeight: 1.8 }}>
+                padding: '0.65rem 0.9rem', marginBottom: '1rem', fontSize: '0.82rem', lineHeight: 1.7 }}>
                 <div><MapPin size={13} style={{ verticalAlign: 'middle' }} /> <strong>Location:</strong> {city} - {scenario.location}</div>
                 <div><Clock size={13} style={{ verticalAlign: 'middle' }} /> <strong>Alert Time:</strong> {eventTime}</div>
                 <div>⏳ <strong>Duration:</strong> {scenario.duration}</div>
               </div>
 
-              {/* Agency summary (read-only) */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.5rem' }}>
-                <AgencyRow icon={<UserCheck size={16} />} color="#1e3a8a" agency="District Police"  action={scenario.police} />
-                <AgencyRow icon={<Building2 size={16} />} color="#92400e" agency="Temple Trust"     action={scenario.temple} />
-                <AgencyRow icon={<Bus size={16} />}       color="#166534" agency="GSRTC Transport"  action={scenario.gsrtc} />
+              {/* Individual agency confirm cards */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1.25rem' }}>
+                <AgencyConfirmRow icon={<UserCheck size={16} />} color="#1e3a8a" bg="#eff6ff"
+                  agency="District Police" action={scenario.police}
+                  isAcked={policeAck} ackTime={policeAckTime} onAck={() => handleAgencyAck('police')} />
+                <AgencyConfirmRow icon={<Building2 size={16} />} color="#92400e" bg="#fffbeb"
+                  agency="Temple Trust" action={scenario.temple}
+                  isAcked={templeAck} ackTime={templeAckTime} onAck={() => handleAgencyAck('temple')} />
+                <AgencyConfirmRow icon={<Bus size={16} />} color="#166534" bg="#f0fdf4"
+                  agency="GSRTC Transport" action={scenario.gsrtc}
+                  isAcked={gsrtcAck} ackTime={gsrtcAckTime} onAck={() => handleAgencyAck('gsrtc')} />
               </div>
 
-              <button className="btn btn-danger" style={{ width: '100%', padding: '0.85rem', fontSize: '0.95rem' }}
-                onClick={handleGoToAgencyPage}>
-                <ArrowRight size={18} /> CONFIRM ALL AGENCY TASKS
+              {/* Progress + Return button */}
+              <div style={{ textAlign: 'center', fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+                {[policeAck, templeAck, gsrtcAck].filter(Boolean).length}/3 agencies confirmed
+              </div>
+              <button className="btn btn-success" style={{ width: '100%', padding: '0.8rem', fontSize: '0.9rem',
+                opacity: allAgenciesDone ? 1 : 0.35, cursor: allAgenciesDone ? 'pointer' : 'not-allowed' }}
+                disabled={!allAgenciesDone} onClick={handleAllDone}>
+                <CheckCircle size={18} />
+                {allAgenciesDone ? 'ALL CONFIRMED - RETURN TO DASHBOARD' : 'Confirm all agencies to continue'}
               </button>
             </div>
           )}
@@ -368,12 +399,12 @@ export default function App() {
       <div style={{ filter: appLocked ? 'blur(5px) grayscale(30%)' : 'none', pointerEvents: appLocked ? 'none' : 'auto', transition: 'filter 0.3s' }}>
 
         <header className="header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div className="header-brand" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <ShieldAlert size={28} color="#2563eb" />
             <span style={{ fontWeight: 800, fontSize: '1.4rem', color: '#1e293b' }}>CROWD SHIELD</span>
-            <span style={{ color: '#94a3b8', fontSize: '0.85rem', marginLeft: '0.5rem' }}>Multi-Agency Dashboard</span>
+            <span className="header-subtitle" style={{ color: '#94a3b8', fontSize: '0.85rem', marginLeft: '0.5rem' }}>Multi-Agency Dashboard</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+          <div className="header-controls" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Crush Window</div>
               <div style={{ fontWeight: 800, color: isHigh ? '#dc2626' : '#1e293b' }}>
@@ -384,6 +415,26 @@ export default function App() {
               <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Trend</div>
               <div style={{ fontWeight: 700 }}>{pred.trend_slope > 0 ? '↗ Rising' : '↘ Falling'}</div>
             </div>
+            {/* Replay speed selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Speed</span>
+              <select
+                value={replaySpeed}
+                onChange={e => setReplaySpeed(Number(e.target.value))}
+                style={{ fontSize: '0.78rem', fontWeight: 600, border: '1px solid #e2e8f0', borderRadius: 6,
+                  padding: '0.3rem 0.5rem', background: '#f8fafc', color: '#1e293b', cursor: 'pointer' }}
+              >
+                <option value={3000}>0.5×</option>
+                <option value={1500}>1×</option>
+                <option value={750}>2×</option>
+                <option value={300}>5×</option>
+              </select>
+            </div>
+            {/* Reset button */}
+            <button className="btn" style={{ width: 'auto', padding: '0.5rem 1rem', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}
+              onClick={handleReset}>
+              🔄 RESET
+            </button>
             <button className={`btn ${playing ? 'btn-danger' : 'btn-primary'}`}
               style={{ width: 'auto', padding: '0.5rem 1.25rem' }}
               onClick={() => {
@@ -409,6 +460,26 @@ export default function App() {
               </div>
               <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#94a3b8' }}>
                 Predicted (10 min): <strong style={{ color: '#1e293b' }}>{pred.predicted_pressure.toFixed(1)} pax/m</strong>
+              </div>
+              {/* Pattern classifier badge */}
+              <div style={{ marginTop: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Pattern:</span>
+                {pred.pattern === 'CRUSH' ? (
+                  <span style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca',
+                    padding: '0.2rem 0.65rem', borderRadius: 99, fontSize: '0.75rem', fontWeight: 700 }}>
+                    CRUSH BUILDUP 🚨
+                  </span>
+                ) : pred.pattern === 'SURGE' ? (
+                  <span style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0',
+                    padding: '0.2rem 0.65rem', borderRadius: 99, fontSize: '0.75rem', fontWeight: 700 }}>
+                    TEMPORARY SURGE ✅
+                  </span>
+                ) : (
+                  <span style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0',
+                    padding: '0.2rem 0.65rem', borderRadius: 99, fontSize: '0.75rem', fontWeight: 700 }}>
+                    ANALYSING...
+                  </span>
+                )}
               </div>
             </div>
 
@@ -458,8 +529,8 @@ export default function App() {
                     <tbody>
                       {logs.map((l, i) => (
                         <tr key={i}>
-                          <td style={{ color: '#94a3b8' }}>{l.time}</td>
-                          <td style={{ fontWeight: 600 }}>{l.detail}</td>
+                          <td style={{ color: l.breach ? '#dc2626' : '#94a3b8' }}>{l.time}</td>
+                          <td style={{ fontWeight: 600, color: l.breach ? '#dc2626' : 'inherit' }}>{l.detail}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -513,6 +584,41 @@ function AgencyRow({ icon, color, agency, action }) {
       <div>
         <div style={{ fontWeight: 700, fontSize: '0.8rem', color, marginBottom: '0.1rem' }}>{agency}</div>
         <div style={{ fontSize: '0.8rem', color: '#475569' }}>{action}</div>
+      </div>
+    </div>
+  );
+}
+
+function AgencyConfirmRow({ icon, color, bg, agency, action, isAcked, ackTime, onAck }) {
+  const isOverdue = ackTime !== null && ackTime > 90;
+  return (
+    <div style={{ display: 'flex', gap: '0.65rem',
+      background: isAcked ? '#f0fdf4' : bg,
+      border: `1px solid ${isAcked ? (isOverdue ? '#fecaca' : '#a7f3d0') : color + '30'}`,
+      borderRadius: 10, padding: '0.65rem 0.85rem', alignItems: 'flex-start',
+      transition: 'all 0.3s' }}>
+      <span style={{ color: isAcked ? (isOverdue ? '#dc2626' : '#059669') : color, marginTop: 2, flexShrink: 0 }}>{icon}</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 700, fontSize: '0.8rem', color: isAcked ? (isOverdue ? '#dc2626' : '#059669') : color, marginBottom: '0.15rem' }}>{agency}</div>
+        <div style={{ fontSize: '0.78rem', color: '#475569', marginBottom: '0.5rem', lineHeight: 1.5 }}>{action}</div>
+        <button
+          className={`btn ${isAcked ? 'btn-success' : 'btn-primary'}`}
+          style={{ width: '100%', padding: '0.4rem', fontSize: '0.75rem',
+            background: isAcked ? (isOverdue ? '#dc2626' : '#10b981') : color }}
+          disabled={isAcked}
+          onClick={onAck}
+        >
+          {isAcked ? '✓ Confirmed' : `Confirm ${agency}`}
+        </button>
+        {/* Response time display under the button */}
+        {isAcked && ackTime !== null && (
+          <div style={{ marginTop: '0.35rem', fontSize: '0.72rem', fontWeight: 700, textAlign: 'center',
+            color: isOverdue ? '#dc2626' : '#059669' }}>
+            {isOverdue
+              ? `⏱️ Responded in ${ackTime}s — OVERDUE by ${ackTime - 90}s`
+              : `✔️ Responded in ${ackTime}s`}
+          </div>
+        )}
       </div>
     </div>
   );
