@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { ShieldAlert, Play, Pause, UserCheck, Building2, Bus, Activity,
-         AlertTriangle, CheckCircle, AlertCircle, MapPin, Clock } from 'lucide-react';
+         AlertTriangle, CheckCircle, AlertCircle, MapPin, Clock, Moon, Sun } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -90,6 +90,15 @@ export default function App() {
 
   // Replay speed: ms between steps
   const [replaySpeed, setReplaySpeed] = useState(1500);
+
+  // ── Dark mode ─────────────────────────────────────────────────────
+  const [darkMode, setDarkMode] = useState(() =>
+    localStorage.getItem('cs-dark') === 'true'
+  );
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+    localStorage.setItem('cs-dark', darkMode);
+  }, [darkMode]);
 
   // ── Modal (step 1 & 2) ─────────────────────────────────────────────
   const [modal, setModal]         = useState(null);   // null | 'ask' | 'warn'
@@ -321,11 +330,11 @@ export default function App() {
               <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
                 📍 <strong>{city} - {scenario.location}</strong> &nbsp;|&nbsp; ⏰ <strong>{eventTime}</strong>
               </p>
-              <p style={{ textAlign: 'center', fontWeight: 700, fontSize: '1rem', marginBottom: '1.5rem', color: '#0f172a' }}>
+              <p className="modal-question" style={{ textAlign: 'center', fontWeight: 700, fontSize: '1rem', marginBottom: '1.5rem', color: '#0f172a' }}>
                 Did you take any action or not?
               </p>
               {slaBreach && (
-                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
+                <div className="sla-breach-banner" style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
                   padding: '0.6rem 1rem', marginBottom: '1rem', textAlign: 'center', color: '#b91c1c', fontWeight: 700, fontSize: '0.85rem' }}>
                   ⏱️ SLA BREACHED — Response window expired!
                 </div>
@@ -344,8 +353,8 @@ export default function App() {
           {/* STEP 2: Individual agency confirmation */}
           {modal === 'warn' && (
             <div className="modal-box shadow-xl" style={{ borderTop: '8px solid #ef4444', maxWidth: 580, maxHeight: '90vh', overflowY: 'auto' }}>
-              {/* SLA Timer bar (continues) */}
-              <div style={{ position: 'relative', height: 6, background: '#f1f5f9', borderRadius: 99, marginBottom: '1rem', overflow: 'hidden' }}>
+              {/* SLA Timer bar - track uses dark-friendly color */}
+              <div style={{ position: 'relative', height: 6, background: 'var(--border-color)', borderRadius: 99, marginBottom: '1rem', overflow: 'hidden' }}>
                 <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 99,
                   width: `${(slaTimer / 90) * 100}%`, transition: 'width 1s linear',
                   background: slaTimer > 30 ? '#2563eb' : slaTimer > 10 ? '#f59e0b' : '#ef4444' }} />
@@ -354,13 +363,13 @@ export default function App() {
                 <h2 style={{ color: '#ef4444', marginBottom: 0, fontSize: '1.15rem' }}>
                   🚨 CONFIRM EACH AGENCY
                 </h2>
-                <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '1.1rem',
+                <span className="sla-count" style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '1.1rem',
                   color: slaTimer > 30 ? '#1e293b' : slaTimer > 10 ? '#d97706' : '#dc2626' }}>
                   {slaTimer}s
                 </span>
               </div>
 
-              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10,
+              <div className="modal-info-box" style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10,
                 padding: '0.65rem 0.9rem', marginBottom: '1rem', fontSize: '0.82rem', lineHeight: 1.7 }}>
                 <div><MapPin size={13} style={{ verticalAlign: 'middle' }} /> <strong>Location:</strong> {city} - {scenario.location}</div>
                 <div><Clock size={13} style={{ verticalAlign: 'middle' }} /> <strong>Alert Time:</strong> {eventTime}</div>
@@ -381,7 +390,7 @@ export default function App() {
               </div>
 
               {/* Progress + Return button */}
-              <div style={{ textAlign: 'center', fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+              <div className="modal-progress" style={{ textAlign: 'center', fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
                 {[policeAck, templeAck, gsrtcAck].filter(Boolean).length}/3 agencies confirmed
               </div>
               <button className="btn btn-success" style={{ width: '100%', padding: '0.8rem', fontSize: '0.9rem',
@@ -430,8 +439,19 @@ export default function App() {
                 <option value={300}>5×</option>
               </select>
             </div>
+            {/* Dark mode toggle */}
+            <button
+              onClick={() => setDarkMode(d => !d)}
+              title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              style={{ width: 'auto', padding: '0.5rem 0.7rem', background: 'var(--bg-main)',
+                color: 'var(--text-main)', border: '1px solid var(--border-color)',
+                borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center',
+                gap: '0.35rem', fontSize: '0.78rem', fontWeight: 600, transition: 'all 0.2s' }}>
+              {darkMode ? <Sun size={15} /> : <Moon size={15} />}
+              <span className="header-subtitle">{darkMode ? 'Light' : 'Dark'}</span>
+            </button>
             {/* Reset button */}
-            <button className="btn" style={{ width: 'auto', padding: '0.5rem 1rem', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}
+            <button className="btn" style={{ width: 'auto', padding: '0.5rem 1rem', background: 'var(--bg-main)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
               onClick={handleReset}>
               🔄 RESET
             </button>
@@ -592,7 +612,7 @@ function AgencyRow({ icon, color, agency, action }) {
 function AgencyConfirmRow({ icon, color, bg, agency, action, isAcked, ackTime, onAck }) {
   const isOverdue = ackTime !== null && ackTime > 90;
   return (
-    <div style={{ display: 'flex', gap: '0.65rem',
+    <div className="agency-confirm-row" style={{ display: 'flex', gap: '0.65rem',
       background: isAcked ? '#f0fdf4' : bg,
       border: `1px solid ${isAcked ? (isOverdue ? '#fecaca' : '#a7f3d0') : color + '30'}`,
       borderRadius: 10, padding: '0.65rem 0.85rem', alignItems: 'flex-start',
@@ -600,7 +620,7 @@ function AgencyConfirmRow({ icon, color, bg, agency, action, isAcked, ackTime, o
       <span style={{ color: isAcked ? (isOverdue ? '#dc2626' : '#059669') : color, marginTop: 2, flexShrink: 0 }}>{icon}</span>
       <div style={{ flex: 1 }}>
         <div style={{ fontWeight: 700, fontSize: '0.8rem', color: isAcked ? (isOverdue ? '#dc2626' : '#059669') : color, marginBottom: '0.15rem' }}>{agency}</div>
-        <div style={{ fontSize: '0.78rem', color: '#475569', marginBottom: '0.5rem', lineHeight: 1.5 }}>{action}</div>
+        <div className="agency-action-text" style={{ fontSize: '0.78rem', color: '#475569', marginBottom: '0.5rem', lineHeight: 1.5 }}>{action}</div>
         <button
           className={`btn ${isAcked ? 'btn-success' : 'btn-primary'}`}
           style={{ width: '100%', padding: '0.4rem', fontSize: '0.75rem',
@@ -623,3 +643,4 @@ function AgencyConfirmRow({ icon, color, bg, agency, action, isAcked, ackTime, o
     </div>
   );
 }
+

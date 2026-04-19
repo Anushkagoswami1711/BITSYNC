@@ -21,7 +21,74 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-body { min-height: 100vh; background-color: var(--bg-main); }
+body { min-height: 100vh; background-color: var(--bg-main); transition: background-color 0.3s, color 0.3s; }
+
+/* ── Dark Theme Variable Overrides ────────────────────────────────── */
+[data-theme="dark"] {
+  --bg-main:      #0f172a;
+  --bg-card:      #1e293b;
+  --text-main:    #f1f5f9;
+  --text-muted:   #94a3b8;
+  --accent:       #3b82f6;
+  --danger:       #ef4444;
+  --danger-bg:    #450a0a;
+  --warning:      #f59e0b;
+  --warning-bg:   #451a03;
+  --success:      #10b981;
+  --success-bg:   #052e16;
+  --border-color: #334155;
+}
+
+[data-theme="dark"] body { background-color: var(--bg-main); color: var(--text-main); }
+
+/* Dark: cards, modals, tables inherit from vars automatically */
+[data-theme="dark"] .card           { background: var(--bg-card); border-color: var(--border-color); }
+[data-theme="dark"] .header         { background: var(--bg-card); border-color: var(--border-color); }
+[data-theme="dark"] .modern-table th { border-color: var(--border-color); color: var(--text-muted); }
+[data-theme="dark"] .modern-table td { border-color: #1e293b; color: var(--text-main); }
+[data-theme="dark"] .action-text    { background: #0f172a; color: var(--text-main); }
+[data-theme="dark"] select { background: #1e293b !important; color: var(--text-main) !important; border-color: var(--border-color) !important; }
+[data-theme="dark"] .status-LOW    { background: #052e16; color: #34d399; }
+[data-theme="dark"] .status-MEDIUM { background: #451a03; color: #fbbf24; }
+[data-theme="dark"] .status-HIGH   { background: #450a0a; color: #f87171; }
+
+/* ── Dark Mode: Modal text overrides (fixes hardcoded inline colors) ── */
+[data-theme="dark"] .modal-box                  { background: #1e293b; color: var(--text-main); }
+[data-theme="dark"] .modal-box h1,
+[data-theme="dark"] .modal-box h2,
+[data-theme="dark"] .modal-box h3               { color: #f1f5f9 !important; }
+[data-theme="dark"] .modal-box p                { color: #94a3b8 !important; }
+[data-theme="dark"] .modal-box strong           { color: #e2e8f0 !important; }
+
+/* Step 1 "Did you take any action" question text */
+[data-theme="dark"] .modal-box .modal-question  { color: #f1f5f9 !important; }
+
+/* SLA timer number */
+[data-theme="dark"] .modal-box .sla-count       { color: #f1f5f9 !important; }
+
+/* Location/time info box inside modal */
+[data-theme="dark"] .modal-info-box             {
+  background: #1a1a2e !important;
+  border-color: #7f1d1d !important;
+  color: #fca5a5 !important;
+}
+[data-theme="dark"] .modal-info-box div         { color: #fca5a5 !important; }
+[data-theme="dark"] .modal-info-box strong      { color: #f87171 !important; }
+
+/* Agency confirm row in Step 2 modal */
+[data-theme="dark"] .agency-confirm-row         { background: #0f172a !important; border-color: #334155 !important; }
+[data-theme="dark"] .agency-confirm-row .agency-action-text { color: #cbd5e1 !important; }
+
+/* Progress counter "0/3 agencies confirmed" */
+[data-theme="dark"] .modal-box .modal-progress  { color: #94a3b8 !important; }
+
+/* SLA breach banner inside modal */
+[data-theme="dark"] .sla-breach-banner          {
+  background: #450a0a !important;
+  border-color: #991b1b !important;
+  color: #fca5a5 !important;
+}
+
 
 /* ── Layout ─────────────────────────────────────────────────────────── */
 .dashboard-container {
